@@ -122,7 +122,7 @@ export async function rsaDecrypt(
     privateKey,
     encryptedData
   );
-  return Buffer.from(decryptedData).toString("base64");
+  return arrayBufferToBase64(decryptedData);
 }
 
 // ######################
@@ -132,12 +132,12 @@ export async function rsaDecrypt(
 // Generates a random symmetric key
 export async function createRandomSymmetricKey(): Promise<webcrypto.CryptoKey> {
   return await webcrypto.subtle.generateKey(
-    {
-      name: "AES-CBC",
-      length: 256,
-    },
-    true,
-    ["encrypt", "decrypt"]
+      {
+          name: "AES-CBC",
+          length: 256,
+      },
+      true,
+      ["encrypt", "decrypt"]
   );
 }
 
@@ -148,18 +148,16 @@ export async function exportSymKey(key: webcrypto.CryptoKey): Promise<string> {
 }
 
 // Import a base64 string format to its crypto native format
-export async function importSymKey(
-  strKey: string
-): Promise<webcrypto.CryptoKey> {
+export async function importSymKey(strKey: string): Promise<webcrypto.CryptoKey> {
   const keyBuffer = base64ToArrayBuffer(strKey);
   return await webcrypto.subtle.importKey(
-    "raw",
-    keyBuffer,
-    {
-      name: "AES-GCM",
-    },
-    true,
-    ["encrypt", "decrypt"]
+      "raw",
+      keyBuffer,
+      {
+          name: "AES-CBC",
+      },
+      true,
+      ["encrypt", "decrypt"]
   );
 }
 

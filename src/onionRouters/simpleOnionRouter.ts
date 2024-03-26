@@ -1,7 +1,7 @@
-import { generateRsaKeyPair, exportPubKey } from '../crypto';
+import { generateRsaKeyPair, exportPubKey, exportPrvKey, rsaDecrypt, symDecrypt, importPrvKey } from '../crypto';
 import bodyParser from "body-parser";
 import express from "express";
-import { BASE_ONION_ROUTER_PORT } from "../config";
+import { BASE_ONION_ROUTER_PORT, REGISTRY_PORT } from "../config";
 
 let lastReceivedEncryptedMessage: string | null = null;
 let lastReceivedDecryptedMessage: string | null = null;
@@ -32,6 +32,54 @@ export async function simpleOnionRouter(nodeId: number) {
   // Route pour obtenir la destination du dernier message
   onionRouter.get("/getLastMessageDestination", (req, res) => {
     res.json({ result: lastMessageDestination });
+  });
+
+  onionRouter.get("/getPrivateKey", (req, res) => {
+    res.json({ result: privateKey });
+  });
+  
+  const keyPair = await generateRsaKeyPair();
+  const publicKey = await exportPubKey(keyPair.publicKey);
+  const privateKey = await exportPrvKey(keyPair.privateKey);
+
+
+  const response = await fetch(`http://localhost:${REGISTRY_PORT}/registerNode`, {
+    method: "POST",
+    body: JSON.stringify({ nodeId: nodeId, pubKey: publicKey }),
+    headers: { "Content-Type": "application/json" },
+  });
+  
+  if (response.ok) {
+    console.log("Node registered successfully.");
+  } else {
+    console.error("Error registering node:", response.status, response.statusText);
+  }
+
+
+  onionRouter.post("/message", async (req, res) => {
+    try {
+      const layer = req.body.message;
+      const encryptedSymKey = layer.slice(0, 344);
+      const symKey = privateKey ? await rsaDecrypt(encryptedSymKey, await importPrvKey(privateKey)) : null;
+      const encryptedMessage = layer.slice(344);
+      const message = symKey ? await symDecrypt(symKey, encryptedMessage) : null;
+  
+      lastReceivedEncryptedMessage = layer;
+      lastReceivedDecryptedMessage = message ? message.slice(10) : null;
+      lastMessageDestination = message ? parseInt(message.slice(0, 10), 10) : null;
+  
+      if (lastMessageDestination) {
+        await fetch(`http://localhost:${lastMessageDestination}/message`, {
+          method: "POST",
+          body: JSON.stringify({ message: lastReceivedDecryptedMessage }),
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      res.status(200).send({ result: "Message sent successfully" });
+    } catch (error) {
+      console.error("Error:", error);
+      res.status(500).send("An error occurred");
+    }
   });
 
   const server = onionRouter.listen(BASE_ONION_ROUTER_PORT + nodeId, () => {
